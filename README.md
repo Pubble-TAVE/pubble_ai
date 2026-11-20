@@ -35,11 +35,13 @@ app/
   routers/write.py        POST /write/{board-summary, conclusion, option-normalize, todo-catch, next-agenda}
   llm/openai_compat.py    OpenAI와 llama-server를 같은 코드로 (Qwen3 non-thinking)
   services/prompts.py     task별 프롬프트 (선생 LLM, 자체 모델, 학습 데이터가 같은 형식)
+  services/teacher_guides.py  선생 LLM에만 붙이는 task별 작성 기준 + 예시
   services/writer.py      LLM → JSON → 근거 ID 확인 → 검증 → 재시도 → 대체
   services/verifier.py    검증기 연결 지점 (지금은 통과만, 연의 NLI로 교체)
   services/dates.py       상대 날짜 → 마감 ("담주까지" = 다음 주 일요일)
   templates/messages.py   템플릿 문구 (투표 열기, 참여 알림, 안내 문구 등)
 tests/                    가짜 LLM 테스트
+scripts/try_teacher.py    예시 대화로 선생 LLM 5개 task 돌려보기
 ```
 
 ## 처리 흐름 (writer.py)
@@ -64,3 +66,12 @@ tests/                    가짜 LLM 테스트
 - `status`: ok / no_conclusion / skipped / failed
 - `source`: local (자체 모델) / api (OpenAI) / none
 - `attempts`: LLM 호출 횟수 (Langfuse 붙이기 전 임시 기록용)
+
+## 선생 LLM 프롬프트
+
+- user 프롬프트(`prompts.py`)는 선생, 자체 모델이 똑같다 = 학습 데이터의 입력 형식
+- 선생(API)에게만 system에 작성 기준과 예시(`teacher_guides.py`)를 더 붙인다
+  - 공통: 근거 1~3개, 직접 나온 메시지만 / 40자 이내 명사형 / 인원수 숫자 금지 / 익명 작성자 짐작 금지
+  - task별: 쓰는 기준 + 예시 1~2개
+- 학습 데이터 = (user 프롬프트 → 선생 답안). 기준과 예시는 학습 입력에 안 넣음 → 자체 모델이 짧은 프롬프트만으로 선생처럼 쓰게 증류
+- 실제 호출 확인: `python -m scripts.try_teacher` (OPENAI_MODEL 바꿔가며 비교)
