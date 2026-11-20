@@ -18,6 +18,7 @@ class Settings:
     local_base_url: str = os.getenv("LOCAL_BASE_URL", "http://localhost:8080/v1")
     local_model: str = os.getenv("LOCAL_MODEL", "qwen3-1.7b-pubble")
     max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "1"))  # 같은 모델로 다시 쓰는 횟수
+    verify_timeout: float = float(os.getenv("VERIFY_TIMEOUT", "10"))  # 검증기 시간 초과 (초) → 실패
 
 
 def build_clients(s: Settings):
