@@ -29,6 +29,7 @@ from app.schemas.write import (
 )
 from app.services import prompts
 from app.services.dates import resolve_due
+from app.services.teacher_guides import teacher_system
 from app.services.verifier import PassThroughVerifier, Verifier
 from app.templates import messages as tpl
 
@@ -64,8 +65,11 @@ class Writer:
         self.max_retries = max_retries
 
     # ---------- 공통 ----------
-    async def _run(self, prompt: str, post: Callable[[dict], Awaitable[object]]):
-        """(결과, 출처, 시도 횟수). 끝까지 실패하면 결과는 None."""
+    async def _run(self, task: str, prompt: str, post: Callable[[dict], Awaitable[object]]):
+        """(결과, 출처, 시도 횟수). 끝까지 실패하면 결과는 None.
+
+        선생 LLM(API)에는 task별 작성 기준과 예시를 system에 더 붙인다 (teacher_guides.py).
+        """
         plan = [(self.primary, 1 + self.max_retries)]
         if self.fallback is not None:
             plan.append((self.fallback, 1))
@@ -74,7 +78,10 @@ class Writer:
             for _ in range(tries):
                 attempts += 1
                 try:
-                    raw = await client.complete(prompts.SYSTEM, prompt)
+                    system = (
+                        teacher_system(prompts.SYSTEM, task) if client.source is Source.api else prompts.SYSTEM
+                    )
+                    raw = await client.complete(system, prompt)
                     return await post(json.loads(raw)), client.source, attempts
                 except (json.JSONDecodeError, ValidationError, Unusable, KeyError, TypeError, AttributeError) as e:
                     log.warning("쓸 수 없는 결과 (%s, %d번째): %s", client.source, attempts, e)
@@ -112,7 +119,7 @@ class Writer:
                 raise Unusable("쓴 문장이 모두 근거 확인/검증 실패")
             return issues, agreements
 
-        res, src, n = await self._run(prompt, post)
+        res, src, n = await self._run("board_summary", prompt, post)
         if res is None:
             return BoardSummaryResponse(status=WriteStatus.failed, attempts=n)  # 백엔드: 이전 문장 유지
         return BoardSummaryResponse(status=WriteStatus.ok, source=src, attempts=n, issues=res[0], agreements=res[1])
@@ -159,7 +166,7 @@ class Writer:
             flow, _ = await self._clean(d.get("flow"), valid, verify=True)
             return ConclusionDraft(decision=decision, todos=todos, open_issues=open_issues, flow=flow)
 
-        draft, src, n = await self._run(prompt, post)
+        draft, src, n = await self._run("conclusion", prompt, post)
         if draft is None:
             return ConclusionResponse(status=WriteStatus.failed, attempts=n)  # '생성 실패' → [다시 생성]
         status = WriteStatus.ok if draft.decision else WriteStatus.no_conclusion
@@ -182,7 +189,7 @@ class Writer:
                 name = by_id[matched].name
             return name, matched
 
-        res, src, n = await self._run(prompt, post)
+        res, src, n = await self._run("option_normalize", prompt, post)
         if res is None:
             return OptionNormalizeResponse(status=WriteStatus.failed, attempts=n)
         return OptionNormalizeResponse(
@@ -212,7 +219,7 @@ class Writer:
                 evidence=kept[0].evidence, verified=True,
             )
 
-        todo, src, n = await self._run(prompt, post)
+        todo, src, n = await self._run("todo_catch", prompt, post)
         if src is Source.none:
             return TodoCatchResponse(status=WriteStatus.failed, attempts=n)
         if todo is None:
@@ -245,7 +252,7 @@ class Writer:
                                            chat_room_id=req.chat_room_id))
             return out
 
-        res, src, n = await self._run(prompt, post)
+        res, src, n = await self._run("next_agenda", prompt, post)
         if res is None:
             return NextAgendaResponse(status=WriteStatus.failed, attempts=n)
         return NextAgendaResponse(status=WriteStatus.ok, source=src, attempts=n, candidates=res)
