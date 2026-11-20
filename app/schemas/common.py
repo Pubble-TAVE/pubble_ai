@@ -43,6 +43,7 @@ class Evidenced(BaseModel):
     text: str
     evidence: list[str]
     verified: bool | None = Field(None, description="검증기 결과. 응답에는 통과한 문장만 담김")
+    verify_score: float | None = Field(None, description="검증기 점수 (0~1). 통과 기준 조정용")
 
 
 class TodoItem(BaseModel):
@@ -54,6 +55,7 @@ class TodoItem(BaseModel):
         None, description="이미 할당된 할 일이면 그 ID (결론에 보이기만 하고 새로 등록하지 않음)"
     )
     verified: bool | None = None
+    verify_score: float | None = None
 
 
 class AssignedTodo(BaseModel):
