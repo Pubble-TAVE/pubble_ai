@@ -1,0 +1,22 @@
+# 비밀 정보
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 모델, 데이터
+*.gguf
+*.safetensors
+*.bin
+data/raw/
+
+# 기타
+.DS_Store
+.idea/
+.vscode/
