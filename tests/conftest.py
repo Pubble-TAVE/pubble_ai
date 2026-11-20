@@ -15,6 +15,7 @@ class FakeLLM:
         self.source = source
         self.answers: dict[str, list] = {}
         self.calls: list[str] = []
+        self.systems: list[str] = []
 
     def queue(self, task: str, *answers):
         self.answers.setdefault(task, []).extend(answers)
@@ -22,6 +23,7 @@ class FakeLLM:
     async def complete(self, system: str, user: str) -> str:
         task = user.split("\n", 1)[0].replace("[task] ", "").strip()
         self.calls.append(user)
+        self.systems.append(system)
         a = self.answers[task].pop(0)
         if isinstance(a, Exception):
             raise a
