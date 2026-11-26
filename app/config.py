@@ -39,3 +39,19 @@ def build_clients(s: Settings):
     if s.llm_primary == "local" and s.llm_fallback == "openai":
         fallback = openai_client()
     return primary, fallback
+
+
+@dataclass(frozen=True)
+class BoardSettings:
+    """현황판 5칸 계산 설정."""
+
+    # 반응의 대상 확신도가 이 값보다 낮으면 인원수에서 제외한다.
+    # 임시값이다. 반응 분류 모델 평가 후 조정한다.
+    reaction_confidence_min: float = 0.5
+
+    # 익명 의견을 현황판에 넣을지. 가은 안: 넣고 "익명 N"으로 표시한다.
+    # False면 익명 포인트와 익명 반응을 계산에서 아예 뺀다.
+    count_anonymous: bool = True
+
+
+board_settings = BoardSettings()
