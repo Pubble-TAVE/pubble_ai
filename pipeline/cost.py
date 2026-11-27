@@ -44,4 +44,8 @@ def report(rows: list[Usage], n_dialogs: int, target: int = 300, krw_per_usd: fl
             f"{target}개 예상: 일반 ${per * target:.2f} (약 {per * target * krw_per_usd:,.0f}원)"
             f" / Batch ${per * target / 2:.2f} (약 {per * target / 2 * krw_per_usd:,.0f}원)",
         ]
+        conc = sum(s["usd"] for k, s in by_step.items() if k.startswith("conclusion"))
+        if conc:
+            per_c = conc / n_dialogs
+            lines.append(f"결론 1번당 약 ${per_c:.4f} (약 {per_c * krw_per_usd:,.1f}원) — 서비스에서 회의 끝날 때마다 드는 비용")
     return "\n".join(lines)

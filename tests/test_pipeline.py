@@ -104,3 +104,13 @@ def test_continue_short_dialog():
     assert [m["id"] for m in merged["messages"]] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5", "msg_6"]
     assert merged["messages"][4]["reply_to"] == "msg_2"  # 앞 대화를 가리키는 건 그대로
     assert merged["outcome"] == more["outcome"]
+
+
+async def test_label_flow_ends_with_conclusion():
+    claude, log = FakeClaude(), UsageLog()
+    labels = await label_dialog(ORDER, DIALOG, claude, log)
+    steps = [step for step, _ in claude.users]
+    assert steps[-1] == "conclusion"
+    user = claude.users[-1][1]
+    assert "[task] conclusion" in user and "[msg_2]" in user  # 할 일 근거 메시지가 들어감
+    assert "raw" in labels["conclusion"]

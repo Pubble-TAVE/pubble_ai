@@ -120,7 +120,26 @@ async def label_dialog(order: dict, dialog: dict, claude, log: UsageLog, recent_
         summaries.append({"at": frac, "until": msgs[cut].id, "board": board.model_dump(mode="json"),
                           "user": user, "raw": raw})
 
-    return {"structure": structure, "clusters": clusters, "cluster_user": cluster_user, "summaries": summaries}
+    # 4. 결론 (서비스에서도 항상 Claude로 부르는 단계. 대화 끝 현황판 기준으로 비용, 결과 확인용)
+    ev_ids = _evidence_ids(board.model_dump(mode="json"))
+    ev_msgs = [m for m in msgs if m.id in ev_ids]
+    conclusion_user = prompts.conclusion(order["agenda"], members, board, ev_msgs, msgs[-1].sent_at.date(), [])
+    conclusion_raw = await claude.call("conclusion", teacher_system(prompts.SYSTEM, "conclusion"), conclusion_user, log)
+
+    return {"structure": structure, "clusters": clusters, "cluster_user": cluster_user, "summaries": summaries,
+            "conclusion": {"user": conclusion_user, "raw": conclusion_raw}}
+
+
+def _evidence_ids(obj) -> set[str]:
+    """현황판 JSON 안의 evidence ID를 모두 모은다."""
+    if isinstance(obj, dict):
+        out = set(obj.get("evidence") or []) if isinstance(obj.get("evidence"), list) else set()
+        for v in obj.values():
+            out |= _evidence_ids(v)
+        return out
+    if isinstance(obj, list):
+        return set().union(*(_evidence_ids(v) for v in obj)) if obj else set()
+    return set()
 
 
 def check_clusters(raw: str, claim_ids: set[str]) -> dict:
