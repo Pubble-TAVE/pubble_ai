@@ -44,12 +44,15 @@ async def _one(order, out: Path, reuse: Path | None, gemini, claude, log: UsageL
                 print(f"{order['id']}: 생성 JSON 깨짐")
                 return
         problems = generate.check(order, dialog)
+        (out / f"{order['id']}.json").write_text(json.dumps(  # 라벨 전에 대화부터 저장 (라벨이 실패해도 --reuse 가능)
+            {"order": order, "dialog": dialog, "problems": problems}, ensure_ascii=False, indent=1), encoding="utf-8")
         labels = await label_dialog(order, dialog, claude, log) if dialog.get("messages") else {}
         bad = sum(1 for e in labels.get("structure", {}).values() if e["problems"])
+        bad_cluster = len(labels.get("clusters", {}).get("problems", []))
         (out / f"{order['id']}.json").write_text(json.dumps(
             {"order": order, "dialog": dialog, "problems": problems, "labels": labels}, ensure_ascii=False, indent=1),
             encoding="utf-8")
-        print(f"{order['id']}: 메시지 {len(dialog.get('messages', []))}개, 생성 문제 {len(problems)}, 라벨 탈락 {bad}")
+        print(f"{order['id']}: 메시지 {len(dialog.get('messages', []))}개, 생성 문제 {len(problems)}, 구조화 탈락 {bad}, 묶음 문제 {bad_cluster}")
 
 
 async def main(a):

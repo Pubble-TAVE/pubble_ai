@@ -4,7 +4,7 @@ import json
 from pipeline import generate
 from pipeline.clients import Usage, UsageLog
 from pipeline.cost import cost_of, report
-from pipeline.label import label_dialog
+from pipeline.label import check_clusters, label_dialog
 from pipeline.orders import make_orders
 
 ORDER = {
@@ -81,3 +81,11 @@ def test_cost():
     assert round(cost_of(u), 2) == 0.60
     text = report([u], n_dialogs=1, target=300)
     assert "300개 예상" in text and "Batch" in text
+
+
+def test_cluster_check_drops_bad_relation():
+    raw = json.dumps({"clusters": [{"id": "c1", "points": [{"id": "msg_1-1", "relation": "같음"}, {"id": "msg_2-1"},
+                                                        {"id": "msg_9-9", "relation": "같음"}]}]})
+    out = check_clusters(raw, {"msg_1-1", "msg_2-1"})
+    assert out["clusters"] == [{"id": "c1", "points": [{"id": "msg_1-1", "relation": "같음"}]}]
+    assert len(out["problems"]) == 2

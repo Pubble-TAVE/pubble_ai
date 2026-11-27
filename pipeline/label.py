@@ -107,10 +107,7 @@ async def label_dialog(order: dict, dialog: dict, claude, log: UsageLog, recent_
     ) or "(없음)"
     cluster_user = f"[task] cluster\n안건: {order['agenda']}\n포인트:\n{lines}\n\n같은 말끼리 묶는다."
     clusters_raw = await claude.call("cluster", CLUSTER_SYSTEM, cluster_user, log) if claims else '{"clusters": []}'
-    try:
-        clusters = json.loads(clusters_raw)
-    except json.JSONDecodeError:
-        clusters = {"clusters": [], "off_topic": [], "problem": "JSON 문제"}
+    clusters = check_clusters(clusters_raw, {p["id"] for p in claims})
 
     # 3. 시점별 상황 요약 (현황판은 코드로 계산)
     summaries = []
@@ -124,6 +121,30 @@ async def label_dialog(order: dict, dialog: dict, claude, log: UsageLog, recent_
                           "user": user, "raw": raw})
 
     return {"structure": structure, "clusters": clusters, "cluster_user": cluster_user, "summaries": summaries}
+
+
+def check_clusters(raw: str, claim_ids: set[str]) -> dict:
+    """묶음 라벨 형식 검사. 관계 값이 없거나 이상한 포인트, 없는 포인트 ID는 빼고 problems에 남긴다."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return {"clusters": [], "off_topic": [], "problems": [f"JSON 문제: {e}"]}
+    problems, clean, seen = [], [], set()
+    for c in data.get("clusters") or []:
+        pts = []
+        for x in c.get("points") or []:
+            if not isinstance(x, dict) or x.get("id") not in claim_ids:
+                problems.append(f"{c.get('id')}: 없는 포인트 {x}")
+            elif x.get("relation") not in ("같음", "반대"):
+                problems.append(f"{c.get('id')}: relation 값 {x.get('relation')} ({x.get('id')})")
+            elif x["id"] in seen:
+                problems.append(f"{c.get('id')}: 포인트 중복 {x['id']}")
+            else:
+                seen.add(x["id"])
+                pts.append({"id": x["id"], "relation": x["relation"]})
+        if pts:
+            clean.append({"id": c.get("id") or f"c{len(clean) + 1}", "points": pts})
+    return {"clusters": clean, "off_topic": data.get("off_topic") or [], "problems": problems}
 
 
 def compute_board_at(cut: int, all_points: list[dict], clusters: dict, dialog: dict, names: dict) -> BoardResponse:
