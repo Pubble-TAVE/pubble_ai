@@ -26,6 +26,7 @@ class PointIn(BaseModel):
     stance: Stance
     reason: Optional[str] = None
     target: Optional[str] = None
+    answer_to: Optional[str] = None  # 답한 질문이나 요청의 포인트 ID
     owner: Optional[str] = None
     due: Optional[str] = None
     evidence: list[str]
@@ -70,6 +71,7 @@ class BoardRequest(BaseModel):
                 anonymous=p.anonymous,
                 reason=p.reason,
                 target=p.target,
+                answer_to=p.answer_to,
                 owner=p.owner,
                 due=p.due,
             )
