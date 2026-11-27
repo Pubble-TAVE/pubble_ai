@@ -59,6 +59,47 @@ def prompt(order: dict) -> str:
 {OUTPUT}"""
 
 
+def continue_prompt(order: dict, dialog: dict) -> str:
+    """짧게 끝난 대화를 이어 쓰게 한다. 마무리 라벨은 대화 전체 기준으로 다시 받는다."""
+    msgs = dialog["messages"]
+    remaining = max(order["n_messages"] - len(msgs), 5)
+    so_far = json.dumps(msgs, ensure_ascii=False)
+    return f"""{prompt(order)}
+
+지금까지 쓴 대화 (메시지 {len(msgs)}개):
+{so_far}
+
+대화가 주문서보다 짧다. msg_{len(msgs) + 1}부터 이어서 메시지 {remaining}개를 더 쓴다.
+- 앞 대화와 자연스럽게 이어지고, 주문서의 넣을 상황 중 아직 안 나온 것을 넣고, 결말에 맞게 마무리한다.
+- messages에는 새로 쓴 메시지만 넣는다.
+- intended_points, stages, outcome은 앞 대화까지 포함한 대화 전체 기준으로 다시 쓴다."""
+
+
+def merge(dialog: dict, more: dict) -> dict:
+    """이어 쓴 메시지를 붙이고, 마무리 라벨은 새 것으로 바꾼다. ID가 겹치면 뒤 번호로 다시 매긴다."""
+    msgs = list(dialog["messages"])
+    ids = {m["id"] for m in msgs}
+    renamed = {}
+    for m in more.get("messages") or []:
+        new_id = m["id"] if m["id"] not in ids else f"msg_{len(msgs) + 1}"
+        renamed[m["id"]] = new_id
+        msgs.append({**m, "id": new_id})
+        ids.add(new_id)
+    for m in msgs[len(dialog["messages"]):]:
+        for k in ("reply_to", "user_reply_to"):
+            if m.get(k) in renamed and m.get(k) not in {x["id"] for x in dialog["messages"]}:
+                m[k] = renamed[m[k]]
+    out = {**dialog, "messages": msgs}
+    for k in ("intended_points", "stages", "outcome"):
+        if more.get(k):
+            out[k] = more[k]
+    return out
+
+
+def too_short(order: dict, dialog: dict) -> bool:
+    return len(dialog.get("messages") or []) < order["n_messages"] - 15
+
+
 def check(order: dict, dialog: dict) -> list[str]:
     """형식 검사. 문제 목록 (비면 통과)."""
     problems = []
@@ -78,7 +119,7 @@ def check(order: dict, dialog: dict) -> list[str]:
         for k in ("reply_to", "user_reply_to"):
             if m.get(k) is not None and m.get(k) not in ids:
                 problems.append(f"{m.get('id')}: {k}가 없는 메시지 {m.get(k)}")
-    if not order["n_messages"] - 15 <= len(msgs) <= order["n_messages"] + 15:
+    if too_short(order, dialog) or len(msgs) > order["n_messages"] + 15:
         problems.append(f"메시지 수 {len(msgs)} (주문 {order['n_messages']})")
     return problems
 

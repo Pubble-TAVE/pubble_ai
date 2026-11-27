@@ -89,3 +89,18 @@ def test_cluster_check_drops_bad_relation():
     out = check_clusters(raw, {"msg_1-1", "msg_2-1"})
     assert out["clusters"] == [{"id": "c1", "points": [{"id": "msg_1-1", "relation": "같음"}]}]
     assert len(out["problems"]) == 2
+
+
+def test_continue_short_dialog():
+    order = {**ORDER, "n_messages": 60}
+    assert generate.too_short(order, DIALOG)
+    assert "msg_5부터 이어서" in generate.continue_prompt(order, DIALOG)
+    more = {"messages": [{"id": "msg_5", "speaker": "u2", "time": "2026-11-24T21:10", "text": "좋아요",
+                          "reaction": "동의", "reply_to": "msg_2", "user_reply_to": None},
+                         {"id": "msg_2", "speaker": "u3", "time": "2026-11-24T21:11", "text": "ㅇㅋ",
+                          "reaction": "잡담", "reply_to": None, "user_reply_to": None}],
+            "outcome": {"decision": None, "todos": [], "open_issues": []}}
+    merged = generate.merge(DIALOG, more)
+    assert [m["id"] for m in merged["messages"]] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5", "msg_6"]
+    assert merged["messages"][4]["reply_to"] == "msg_2"  # 앞 대화를 가리키는 건 그대로
+    assert merged["outcome"] == more["outcome"]

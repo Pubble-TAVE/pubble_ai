@@ -43,6 +43,14 @@ async def _one(order, out: Path, reuse: Path | None, gemini, claude, log: UsageL
                                                          encoding="utf-8")
                 print(f"{order['id']}: 생성 JSON 깨짐")
                 return
+            for _ in range(2):  # 짧게 끝나면 최대 2번 이어 쓰기
+                if not generate.too_short(order, dialog):
+                    break
+                more_raw = await gemini.call("generate", generate.SYSTEM, generate.continue_prompt(order, dialog), log)
+                try:
+                    dialog = generate.merge(dialog, generate.parse(more_raw))
+                except json.JSONDecodeError:
+                    break
         problems = generate.check(order, dialog)
         (out / f"{order['id']}.json").write_text(json.dumps(  # 라벨 전에 대화부터 저장 (라벨이 실패해도 --reuse 가능)
             {"order": order, "dialog": dialog, "problems": problems}, ensure_ascii=False, indent=1), encoding="utf-8")
