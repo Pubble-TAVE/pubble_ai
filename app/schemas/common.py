@@ -59,10 +59,10 @@ class AssignedTodo(BaseModel):
 
 
 class WriteStatus(str, Enum):
-    ok = "ok"
-    no_conclusion = "no_conclusion"  # 결론 없음 (합의가 없음)
-    skipped = "skipped"  # 쓴 결과가 검증에서 전부 걸러짐
-    failed = "failed"  # 재시도, 대체까지 실패 → 백엔드는 화면 유지 / '생성 실패'
+    ok = "ok"  # 결론은 합의가 없으면 ok + decision null
+    template = "template"  # 상황 요약, 결론: 재시도 후에도 못 만들거나 전부 걸러져서 현황판으로 템플릿 대체
+    skipped = "skipped"  # 구조화: 전부 걸러짐 / 상황 요약, 결론: 입력(현황판)이 비어서 만들 게 없음
+    failed = "failed"  # 구조화: 재시도, 대체까지 실패
 
 
 class Source(str, Enum):

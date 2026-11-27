@@ -57,19 +57,19 @@ scripts/make_dialogs.py      대화 N개 생성 + 라벨 + 비용 계산
 2. 형식 확인: 정해진 값(type, stance) 밖이면 다시 쓰기, 입력에 없는 ID는 버림, 근거가 없는 포인트나 문장은 버림
 3. 검증: 남은 포인트, 문장마다 검증기 호출. 근거 없음, 검증기 오류, 시간 초과(VERIFY_TIMEOUT)는 탈락
 4. 쓸 수 없으면 같은 모델로 한 번 더 → 대체 모델(Claude) 한 번 → 그래도 안 되면 `status: failed`
-5. 쓴 결과가 검증에서 전부 탈락하면 `status: skipped`
+5. 구조화는 전부 탈락하면 `status: skipped`. 상황 요약, 결론은 못 쓰거나 전부 탈락하면 현황판으로 템플릿 대체(`status: template`), 현황판이 비면 `skipped`
 
 ## task별 규칙
 
 | task | 코드에서 하는 것 | status |
 | --- | --- | --- |
 | structure | 포인트 ID는 코드가 붙임(`msg_N-순번`). `answer_to`는 `open_items`에 있는 ID만. 맡은 사람이 없는 할 일 → 요청. 마감은 dates.py 규칙 우선. 할 일이 아니면 owner, due 비움 | ok (포인트 없음 포함) / skipped / failed |
-| summary | 근거는 현황판 항목 ID. 검증은 항목 내용(문장, 사람, 반대편, 담당)으로 | ok / skipped / failed (백엔드는 이전 요약 유지) |
-| conclusion | 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선. 익명은 '익명'으로 (이름 추측 금지) | ok / no_conclusion (결론 없음) / failed (생성 실패) |
+| summary | 근거는 현황판 항목 ID. 검증은 항목 내용(문장, 사람, 반대편, 담당)으로 | ok / template / skipped (현황판 비어 있음) |
+| conclusion | 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선. 익명은 '익명'으로 (이름 추측 금지) | ok (합의 없으면 decision null) / template / skipped (현황판 비어 있음) |
 
 ## 응답 공통 필드
 
-- `status`: ok / no_conclusion / skipped / failed
+- `status`: ok / template / skipped / failed (failed는 구조화만)
 - `source`: local (자체 모델) / api (Claude) / none
 - `attempts`: LLM 호출 횟수 (Langfuse 붙이기 전 임시 기록용)
 

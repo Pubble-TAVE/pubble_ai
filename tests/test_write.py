@@ -98,7 +98,14 @@ def test_summary_evidence_is_board_items(client, llm):
 def test_summary_failed(client, llm):
     llm.queue("summary", "깨짐", "또 깨짐")
     r = client.post("/write/summary", json=summary_body()).json()
-    assert r["status"] == "failed"  # 백엔드는 이전 요약 유지
+    assert r["status"] == "template"  # 못 쓰면 현황판으로 템플릿 대체
+    assert r["sentences"] and all(s["evidence"] for s in r["sentences"])
+
+
+def test_summary_empty_board_skipped(client, llm):
+    empty = {k: [] for k in ("common", "split", "new", "need_check", "todos")}
+    r = client.post("/write/summary", json={**summary_body(), "board": empty}).json()
+    assert r["status"] == "skipped" and not llm.calls
 
 
 # ---------- 결론 ----------
@@ -143,12 +150,20 @@ def test_conclusion_no_agreement(client, llm):
     llm.queue("conclusion", {"decision": None, "todos": [],
                              "open_issues": [{"text": "범위", "evidence": ["msg_3"]}], "flow": []})
     r = client.post("/write/conclusion", json=conclusion_body()).json()
-    assert r["status"] == "no_conclusion"
+    assert r["status"] == "ok" and r["draft"]["decision"] is None  # 합의 없음은 ok + decision null
+
+
+def test_conclusion_failed_uses_template(client, llm):
+    llm.queue("conclusion", "깨짐", "깨짐", "깨짐")
+    r = client.post("/write/conclusion", json=conclusion_body()).json()
+    assert r["status"] == "template" and r["draft"]["decision"] is None
+    assert r["draft"]["todos"] or r["draft"]["open_issues"]  # 현황판 할 일, 미결로 채움
 
 
 async def test_conclusion_uses_claude_even_when_local():
     local, claude = FakeLLM(Source.local), FakeLLM(Source.api)
-    claude.queue("conclusion", {"decision": None, "todos": [], "open_issues": [], "flow": []})
+    claude.queue("conclusion", {"decision": None, "todos": [],
+                                "open_issues": [{"text": "범위", "evidence": ["msg_3"]}], "flow": []})
     from app.schemas.write import ConclusionRequest
 
     r = await Writer(local, claude, conclusion_client=claude).conclusion(ConclusionRequest(**conclusion_body()))
