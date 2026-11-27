@@ -20,6 +20,7 @@ from app.config import BoardSettings, board_settings
 CLAIM_TYPES = {"제안", "의견", "정보"}
 # 답이 필요한 유형 (확인 필요 칸 후보)
 ASK_TYPES = {"질문", "요청"}
+EVERYONE = "전원"  # 질문과 요청의 target이 모두를 향할 때
 # 다른 포인트에 대한 응답으로 보는 입장
 RESPONSE_STANCES = {"찬성", "조건부", "반대"}
 
@@ -38,7 +39,8 @@ class Point:
     evidence: tuple[str, ...]
     anonymous: bool = False
     reason: Optional[str] = None
-    target: Optional[str] = None
+    target: Optional[str] = None  # 주제 텍스트. 질문과 요청은 받는 사람이나 "전원"
+    answer_to: Optional[str] = None  # 답한 질문이나 요청의 포인트 ID
     owner: Optional[str] = None
     due: Optional[str] = None
 
@@ -233,10 +235,11 @@ def compute_board(
     def name_of(speaker: str, anonymous: bool) -> str:
         return labels.get(speaker, speaker) if anonymous else speaker
 
-    # 질문이나 요청에 달린 답. 답 포인트는 주장 묶음에 넣지 않는다.
+    # 질문이나 요청에 달린 답은 구조화가 answer_to로 알려준다 (target은 주제 텍스트라 ID가 아니다).
+    # 답 포인트는 주장 묶음에 넣지 않는다.
     answers: dict[str, list[Point]] = defaultdict(list)
     for p in points:
-        asked = by_id.get(p.target) if p.target else None
+        asked = by_id.get(p.answer_to) if p.answer_to else None
         if asked is not None and asked.type in ASK_TYPES and p.speaker != asked.speaker:
             answers[asked.id].append(p)
     answer_ids = {a.id for lst in answers.values() for a in lst}
@@ -395,14 +398,17 @@ def compute_board(
 
 
 def _accepted_by(request: Point, reactions: Sequence[Reaction]) -> list[Reaction]:
-    """요청을 수락한 반응. 요청 포인트만 해당하고, 받는 사람이 정해져 있으면 그 사람의 동의만 센다."""
+    """요청을 수락한 반응. 요청 포인트만 해당하고, 받는 사람이 정해져 있으면 그 사람의 동의만 센다.
+
+    받는 사람이 없거나 "전원"이면 요청한 사람을 뺀 누구의 동의든 수락이다.
+    """
     if request.type != "요청":
         return []
     accepted: list[Reaction] = []
     for r in reactions:
         if r.reaction != "동의" or r.speaker == request.speaker:
             continue
-        if request.target is not None and r.speaker != request.target:
+        if request.target not in (None, EVERYONE) and r.speaker != request.target:
             continue
         if all(a.speaker != r.speaker for a in accepted):
             accepted.append(r)

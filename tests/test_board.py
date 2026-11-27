@@ -18,11 +18,11 @@ from app.services.board import (
 # ---------------------------------------------------------------- 만들기 도구
 
 def point(pid, text, speaker, type="의견", stance="찬성", target=None, anonymous=False,
-          owner=None, due=None, reason=None):
+          owner=None, due=None, reason=None, answer_to=None):
     message_id = pid.rsplit("-", 1)[0]
     return Point(id=pid, text=text, type=type, stance=stance, speaker=speaker,
                  evidence=(message_id,), anonymous=anonymous, reason=reason,
-                 target=target, owner=owner, due=due)
+                 target=target, answer_to=answer_to, owner=owner, due=due)
 
 
 def reaction(rid, speaker, kind="동의", reply_to=None, conf=0.9, anonymous=False):
@@ -248,7 +248,7 @@ def test_unanswered_question_needs_check():
 def test_answer_removes_question_from_need_check():
     points = [
         point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
-        point("msg_2-1", "가능해요", "연", type="정보", stance="없음", target="msg_1-1"),
+        point("msg_2-1", "가능해요", "연", type="정보", stance="없음", answer_to="msg_1-1"),
     ]
     board = compute_board(points, [], [])
     assert board.need_check == []
@@ -258,7 +258,43 @@ def test_answer_removes_question_from_need_check():
 def test_askers_own_follow_up_is_not_an_answer():
     points = [
         point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
-        point("msg_2-1", "급하진 않아요", "지현", type="정보", stance="없음", target="msg_1-1"),
+        point("msg_2-1", "급하진 않아요", "지현", type="정보", stance="없음", answer_to="msg_1-1"),
+    ]
+    assert ids(compute_board(points, [], []).need_check) == ["msg_1-1"]
+
+
+def test_answer_far_above_still_resolves_the_question():
+    points = [
+        point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
+        point("msg_2-1", "요약 필요", "가은"),
+        point("msg_3-1", "독촉 필요", "윤서"),
+        point("msg_9-1", "가능해요", "연", type="정보", stance="없음", answer_to="msg_1-1"),
+    ]
+    assert compute_board(points, [], []).need_check == []
+
+
+def test_only_the_linked_question_is_resolved():
+    points = [
+        point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
+        point("msg_2-1", "비용은요?", "윤서", type="질문", stance="없음", target="전원"),
+        point("msg_3-1", "가능해요", "연", type="정보", stance="없음", answer_to="msg_2-1"),
+    ]
+    assert ids(compute_board(points, [], []).need_check) == ["msg_1-1"]
+
+
+def test_unknown_answer_to_is_ignored():
+    points = [
+        point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
+        point("msg_2-1", "가능해요", "연", type="정보", stance="없음", answer_to="msg_99-1"),
+    ]
+    assert ids(compute_board(points, [], []).need_check) == ["msg_1-1"]  # 없는 ID는 무시, 오류 없음
+
+
+def test_target_alone_is_not_an_answer():
+    # target은 주제 텍스트다. 질문 ID가 들어 있어도 답으로 치지 않는다 (답은 answer_to로만).
+    points = [
+        point("msg_1-1", "실시간으로 가능한가요?", "지현", type="질문", stance="없음", target="연"),
+        point("msg_2-1", "가능해요", "연", type="정보", stance="없음", target="msg_1-1"),
     ]
     assert ids(compute_board(points, [], []).need_check) == ["msg_1-1"]
 
@@ -301,10 +337,19 @@ def test_request_to_everyone_is_accepted_by_anyone_but_the_asker():
     assert board.need_check == [] and [t.owner for t in board.todos] == ["가은"]
 
 
+def test_request_with_target_everyone_is_accepted_by_anyone_but_the_asker():
+    points = [point("msg_1-1", "피그마 확인", "유민", type="요청", stance="없음", target="전원")]
+    own = compute_board(points, [], [reaction("msg_2", "유민", reply_to="msg_1")])
+    assert ids(own.need_check) == ["msg_1-1"]
+
+    board = compute_board(points, [], [reaction("msg_2", "가은", reply_to="msg_1")])
+    assert board.need_check == [] and [t.owner for t in board.todos] == ["가은"]
+
+
 def test_todo_point_answering_a_request_resolves_it():
     points = [
         point("msg_1-1", "피그마 확인", "유민", type="요청", stance="없음", target="가은"),
-        point("msg_2-1", "제가 할게요", "가은", type="할 일", stance="없음", target="msg_1-1", owner="가은"),
+        point("msg_2-1", "제가 할게요", "가은", type="할 일", stance="없음", answer_to="msg_1-1", owner="가은"),
     ]
     board = compute_board(points, [], [])
     assert board.need_check == []
@@ -351,6 +396,19 @@ def test_request_to_response_round_trip():
     assert dumped["new"][0]["people"][0]["name"] == "익명 1"
     # 제외된 반응은 응답에는 없고 계산 결과에만 남는다 (평가용)
     assert board.excluded_reactions == [ExcludedReaction("msg_6", "대상 메시지에 포인트 여러 개")]
+
+
+def test_answer_to_passes_through_the_schema():
+    data = v2_request_dict()
+    data["points"] += [
+        {"id": "msg_7-1", "text": "가능한가요?", "type": "질문", "stance": "없음", "target": "전원",
+         "evidence": ["msg_7"], "speaker": "윤서"},
+        {"id": "msg_8-1", "text": "가능해요", "type": "정보", "stance": "없음", "answer_to": "msg_7-1",
+         "evidence": ["msg_8"], "speaker": "연"},
+    ]
+    points, clusters, reactions = BoardRequest.model_validate(data).to_domain()
+    assert {p.id: p.answer_to for p in points}["msg_8-1"] == "msg_7-1"
+    assert "msg_7-1" not in ids(compute_board(points, clusters, reactions).need_check)
 
 
 def test_request_rejects_unknown_values():
