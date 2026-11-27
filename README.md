@@ -45,8 +45,10 @@ app/
   services/verifier.py       검증기 연결 지점: verify(task, 문장, 근거[ID, 이름, 내용]) → passed, score, reason (연 NLI로 교체)
   services/dates.py          상대 날짜 → 마감 ("담주까지" = 다음 주 일요일)
   services/board.py          현황판 5칸 계산 규칙 (연)
+pipeline/                    가상 대화 데이터: 주문서(orders) → Gemini 생성(generate) → Claude 라벨(label) → 비용(cost)
 tests/                       가짜 LLM 테스트
 scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (effort 비교)
+scripts/make_dialogs.py      대화 N개 생성 + 라벨 + 비용 계산
 ```
 
 ## 처리 흐름 (writer.py)
@@ -55,19 +57,19 @@ scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (eff
 2. 형식 확인: 정해진 값(type, stance) 밖이면 다시 쓰기, 입력에 없는 ID는 버림, 근거가 없는 포인트나 문장은 버림
 3. 검증: 남은 포인트, 문장마다 검증기 호출. 근거 없음, 검증기 오류, 시간 초과(VERIFY_TIMEOUT)는 탈락
 4. 쓸 수 없으면 같은 모델로 한 번 더 → 대체 모델(Claude) 한 번 → 그래도 안 되면 `status: failed`
-5. 쓴 결과가 검증에서 전부 탈락하면 `status: skipped`
+5. 구조화는 전부 탈락하면 `status: skipped`. 상황 요약, 결론은 못 쓰거나 전부 탈락하면 현황판으로 템플릿 대체(`status: template`), 현황판이 비면 `skipped`
 
 ## task별 규칙
 
 | task | 코드에서 하는 것 | status |
 | --- | --- | --- |
 | structure | 포인트 ID는 코드가 붙임(`msg_N-순번`). `answer_to`는 `open_items`에 있는 ID만. 맡은 사람이 없는 할 일 → 요청. 마감은 dates.py 규칙 우선. 할 일이 아니면 owner, due 비움 | ok (포인트 없음 포함) / skipped / failed |
-| summary | 근거는 현황판 항목 ID. 검증은 항목 내용(문장, 사람, 반대편, 담당)으로 | ok / skipped / failed (백엔드는 이전 요약 유지) |
-| conclusion | 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선. 익명은 '익명'으로 (이름 추측 금지) | ok / no_conclusion (결론 없음) / failed (생성 실패) |
+| summary | 근거는 현황판 항목 ID. 검증은 항목 내용(문장, 사람, 반대편, 담당)으로 | ok / template / skipped (현황판 비어 있음) |
+| conclusion | 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선. 익명은 '익명'으로 (이름 추측 금지) | ok (합의 없으면 decision null) / template / skipped (현황판 비어 있음) |
 
 ## 응답 공통 필드
 
-- `status`: ok / no_conclusion / skipped / failed
+- `status`: ok / template / skipped / failed (failed는 구조화만)
 - `source`: local (자체 모델) / api (Claude) / none
 - `attempts`: LLM 호출 횟수 (Langfuse 붙이기 전 임시 기록용)
 
@@ -80,3 +82,18 @@ scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (eff
 - 학습 데이터 = (user 프롬프트 → 선생 답안). 기준과 예시는 학습 입력에 안 넣음 → 자체 모델이 짧은 프롬프트만으로 선생처럼 쓰게 증류
 - 구조화 모델 출력에는 `due_text`(마감 원문 표현)가 더 있음. 응답에서는 dates.py로 날짜로 바꾸고 빼냄
 - 실제 호출 확인: `python -m scripts.try_teacher` (CLAUDE_EFFORT를 low / medium으로 바꿔가며 비교)
+
+## 가상 대화 데이터 (pipeline/)
+
+```bash
+set -a; source .env; set +a                       # ANTHROPIC_API_KEY, GEMINI_API_KEY
+python -m scripts.make_dialogs --n 10 --out data/raw/test10          # effort 기본값 medium
+python -m scripts.compare_effort data/raw/test10_low data/raw/test10  # effort 비교할 때만 (low를 --reuse로 따로 돌린 뒤)
+```
+
+1. 주문서 (`orders.py`): v2 비율대로 안건 형태, 인원 4~8명, 메시지 50~100개, 넣을 상황 2~4개, 결말을 정함 (seed 고정)
+2. 생성 (`generate.py`, Gemini): 대화 + 반응 분류 라벨(reaction, reply_to, user_reply_to) + 의도한 포인트, 단계, outcome. 형식 검사
+3. 라벨 (`label.py`, Claude): 내용 있음 메시지마다 구조화 (서버와 같은 프롬프트, open_items는 앞 라벨로 계산) → 묶음 → 25/50/75/100% 시점 현황판(코드 계산)으로 상황 요약
+4. 비용 (`cost.py`): 단계별 토큰과 비용, 300개 예상 (일반 / Batch)
+- `--reuse`: 같은 대화로 라벨만 다시 (effort 비교할 때 생성 비용 안 듦)
+- 결과는 `data/raw/` (git에 안 올라감)

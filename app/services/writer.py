@@ -3,7 +3,8 @@
 공통 흐름:
   프롬프트 → LLM → JSON 읽기 → 형식 확인 (입력에 없는 ID는 버림) → 검증(내부 호출) → 결과
   쓸 수 없는 결과면 같은 모델로 한 번 더 → 그래도 안 되면 대체 모델(Claude) → 그래도 안 되면 failed
-  쓴 결과가 검증에서 전부 걸러지면 skipped (결론은 결론 없음)
+  구조화: 쓴 결과가 검증에서 전부 걸러지면 skipped, 끝까지 못 쓰면 failed
+  상황 요약, 결론: 현황판이 비면 skipped (LLM 안 부름), 못 쓰거나 전부 걸러지면 현황판으로 템플릿 대체(template)
 """
 import asyncio
 import json
@@ -209,6 +210,8 @@ class Writer:
 
     # ---------- 상황 요약 ----------
     async def summary(self, req: SummaryRequest) -> SummaryResponse:
+        if _board_empty(req.board):
+            return SummaryResponse(status=WriteStatus.skipped)
         valid = _board_evidence(req.board)
         prompt = prompts.summary(req.agenda_title, req.board)
 
@@ -216,14 +219,15 @@ class Writer:
             return await self._clean("summary", d["sentences"], valid)
 
         res, src, n = await self._run("summary", prompt, post)
-        if res is None:
-            return SummaryResponse(status=WriteStatus.failed, attempts=n)  # 백엔드: 이전 요약 유지
-        sentences, dropped = res
-        status = WriteStatus.skipped if dropped and not sentences else WriteStatus.ok
-        return SummaryResponse(status=status, source=src, attempts=n, sentences=sentences)
+        sentences = res[0] if res else []
+        if not sentences:  # 못 썼거나 전부 걸러짐 → 템플릿
+            return SummaryResponse(status=WriteStatus.template, attempts=n, sentences=summary_template(req.board))
+        return SummaryResponse(status=WriteStatus.ok, source=src, attempts=n, sentences=sentences)
 
     # ---------- 결론 ----------
     async def conclusion(self, req: ConclusionRequest) -> ConclusionResponse:
+        if _board_empty(req.board):
+            return ConclusionResponse(status=WriteStatus.skipped)
         valid = _evidence_map(req.evidence_messages, req.members)
         names = {m.id: m.name for m in req.members}
         existing = {t.id for t in req.existing_todos}
@@ -261,7 +265,37 @@ class Writer:
 
         draft, src, n = await self._run("conclusion", prompt, post,
                                         plan=[(self.conclusion_client, 1 + self.max_retries)])
-        if draft is None:
-            return ConclusionResponse(status=WriteStatus.failed, attempts=n)  # '생성 실패' → [다시 생성]
-        status = WriteStatus.ok if draft.decision else WriteStatus.no_conclusion
-        return ConclusionResponse(status=status, source=src, attempts=n, draft=draft)
+        if draft is None or not (draft.decision or draft.todos or draft.open_issues or draft.flow):
+            return ConclusionResponse(status=WriteStatus.template, attempts=n,
+                                      draft=conclusion_template(req.board, req.members))
+        return ConclusionResponse(status=WriteStatus.ok, source=src, attempts=n, draft=draft)
+
+
+# ---------- 템플릿 대체 (LLM이 못 썼을 때 현황판 그대로) ----------
+def _board_empty(board: BoardResponse) -> bool:
+    return not any(getattr(board, k) for k in ("common", "split", "new", "need_check", "todos"))
+
+
+def summary_template(board: BoardResponse) -> list[Evidenced]:
+    """칸별 첫 항목으로 최대 3문장. 근거는 현황판 항목 ID."""
+    lines = [("common", "의견이 모인 것"), ("split", "의견이 갈린 것"), ("need_check", "답을 기다리는 것"),
+             ("new", "새로 나온 의견"), ("todos", "맡은 일")]
+    out = []
+    for key, label in lines:
+        items = getattr(board, key)
+        if items:
+            extra = f" 외 {len(items) - 1}개" if len(items) > 1 else ""
+            out.append(Evidenced(text=f"{label}: {items[0].text}{extra}", evidence=[items[0].id]))
+        if len(out) == 3:
+            break
+    return out
+
+
+def conclusion_template(board: BoardResponse, members: list[Member]) -> ConclusionDraft:
+    """결정은 비우고, 현황판 할 일 → 할 일, 갈림·확인 필요·새로움 → 미결 사항. 근거는 원문 메시지 ID."""
+    ids = {m.name: m.id for m in members}
+    todos = [TodoItem(task=i.text, owner_id=ids[i.owner], due=_parse_date(i.due), evidence=i.evidence)
+             for i in board.todos if i.owner in ids]
+    open_issues = [Evidenced(text=i.text, evidence=i.evidence) for k in ("split", "need_check", "new")
+                   for i in getattr(board, k)]
+    return ConclusionDraft(decision=None, todos=todos, open_issues=open_issues, flow=[])

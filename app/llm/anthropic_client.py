@@ -19,7 +19,7 @@ class AnthropicClient:
     def __init__(
         self,
         model: str,
-        effort: str = "low",
+        effort: str = "medium",
         api_key: str | None = None,
         max_tokens: int = 8000,
         timeout: float = 60.0,

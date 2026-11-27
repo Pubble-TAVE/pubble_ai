@@ -16,7 +16,7 @@ class Settings:
     llm_fallback: str = os.getenv("LLM_FALLBACK", "api")  # api | none (local일 때 대체)
     anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5")
-    claude_effort: str = os.getenv("CLAUDE_EFFORT", "low")  # low | medium (대화 10개 테스트로 결정)
+    claude_effort: str = os.getenv("CLAUDE_EFFORT", "medium")  # low/medium 비교 후 medium으로 결정
     local_base_url: str = os.getenv("LOCAL_BASE_URL", "http://localhost:8080/v1")
     local_model: str = os.getenv("LOCAL_MODEL", "qwen3-1.7b-pubble")
     max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "1"))  # 같은 모델로 다시 쓰는 횟수
