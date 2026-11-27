@@ -92,7 +92,7 @@ def test_cluster_check_drops_bad_relation():
 
 
 def test_continue_short_dialog():
-    order = {**ORDER, "n_messages": 60}
+    order = {**make_orders(1)[0], "n_messages": 60}
     assert generate.too_short(order, DIALOG)
     assert "msg_5부터 이어서" in generate.continue_prompt(order, DIALOG)
     more = {"messages": [{"id": "msg_5", "speaker": "u2", "time": "2026-11-24T21:10", "text": "좋아요",
