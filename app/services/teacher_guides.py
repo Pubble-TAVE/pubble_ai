@@ -29,7 +29,9 @@ STRUCTURE = """[structure 작성 기준]
 - 할 일: owner는 팀원 ID ("제가" = 보낸 사람). due_text는 마감 원문 표현, due는 기준 날짜로 계산 ("담주까지" = 다음 주 일요일).
 - answer_to: '답이 아직 없는 질문·요청' 중 이 포인트가 답한 것의 ID. 답장을 안 했어도, 한참 위 질문이어도 내용으로 판단.
   질문이 여러 개면 답한 것만 고른다. 요청을 수락한 할 일("제가 할게요")도 그 요청 ID. 아니면 null.
-- 남의 의견을 정리한 글은 정리 부분에서 포인트를 만들지 않는다. 글쓴이 자기 의견만 포인트.
+- 남의 의견을 정리한 글("A님은 X, B님은 Y")은 정리 부분에서 포인트를 만들지 않는다. 글쓴이 자기 의견만 포인트.
+- 결정 사항이나 진행 상황을 항목으로 정리한 글("정리해봤어요! 1. … 2. …")은 사람 이름을 옮긴 게 아니면 항목마다 포인트.
+  하나로 뭉치지 않는다. 담당이 적힌 항목은 할 일.
 - 한 생각을 여러 줄로 나눠 보냈으면 같은 사람의 앞 줄을 보고 뜻을 합쳐 포인트를 만든다. evidence에 관련 메시지 ID를 모두 넣는다.
 - 진행 발언("자유롭게 의견 주세요"), 꼬리 줄("하고요")처럼 안건 내용이 없으면 빈 목록.
 
@@ -61,7 +63,19 @@ STRUCTURE = """[structure 작성 기준]
 [msg_9] 지민 (11/25 10:02): 토요일까지 각자 파트별로 정리해서 오면 어떨까요?
 출력:
 {"points": [
- {"text": "토요일까지 각자 파트별 정리 공유", "type": "제안", "stance": "찬성", "reason": null, "target": "진행 방식", "owner": null, "due_text": null, "due": null, "answer_to": null, "evidence": ["msg_9"]}]}"""
+ {"text": "토요일까지 각자 파트별 정리 공유", "type": "제안", "stance": "찬성", "reason": null, "target": "진행 방식", "owner": null, "due_text": null, "due": null, "answer_to": null, "evidence": ["msg_9"]}]}
+
+[예시 4]
+새 메시지:
+[msg_30] 하준 (11/26 22:40): 정리해봤어요!
+1. 놓친 내용 요약은 유지
+2. 투표는 커스텀으로 구현
+3. 시안은 서연님이 금요일까지
+출력:
+{"points": [
+ {"text": "놓친 내용 요약 유지", "type": "제안", "stance": "찬성", "reason": null, "target": "놓친 내용 요약", "owner": null, "due_text": null, "due": null, "answer_to": null, "evidence": ["msg_30"]},
+ {"text": "투표 커스텀 구현", "type": "제안", "stance": "찬성", "reason": null, "target": "투표 구현", "owner": null, "due_text": null, "due": null, "answer_to": null, "evidence": ["msg_30"]},
+ {"text": "디자인 시안 1차", "type": "할 일", "stance": "없음", "reason": null, "target": "디자인 시안", "owner": "u2", "due_text": "금요일까지", "due": "2026-11-27", "answer_to": null, "evidence": ["msg_30"]}]}"""
 
 SUMMARY = """[summary 작성 기준]
 - 2~3문장, 해요체. 어디까지 왔고(모인 것) 무엇이 걸려 있는지(갈린 것, 답 없는 것) 순서로.

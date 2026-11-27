@@ -87,8 +87,8 @@ scripts/make_dialogs.py      대화 N개 생성 + 라벨 + 비용 계산
 
 ```bash
 set -a; source .env; set +a                       # ANTHROPIC_API_KEY, GEMINI_API_KEY
-python -m scripts.make_dialogs --n 10 --effort low --out data/raw/test10_low
-python -m scripts.make_dialogs --n 10 --effort medium --out data/raw/test10_medium --reuse data/raw/test10_low
+python -m scripts.make_dialogs --n 10 --out data/raw/test10          # effort 기본값 medium
+python -m scripts.compare_effort data/raw/test10_low data/raw/test10  # effort 비교할 때만 (low를 --reuse로 따로 돌린 뒤)
 ```
 
 1. 주문서 (`orders.py`): v2 비율대로 안건 형태, 인원 4~8명, 메시지 50~100개, 넣을 상황 2~4개, 결말을 정함 (seed 고정)

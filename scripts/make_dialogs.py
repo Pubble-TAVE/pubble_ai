@@ -1,8 +1,8 @@
 """가상 회의 대화 생성 + 선생 라벨 + 비용 계산.
 
     set -a; source .env; set +a
-    python -m scripts.make_dialogs --n 10 --effort low --out data/raw/test10_low
-    python -m scripts.make_dialogs --n 10 --effort medium --out data/raw/test10_medium --reuse data/raw/test10_low
+    python -m scripts.make_dialogs --n 10 --out data/raw/test10   (effort 기본값 medium)
+    python -m scripts.make_dialogs --n 10 --effort low --out data/raw/test10_low --reuse data/raw/test10   (effort 비교할 때만)
 
 - --reuse: 이미 생성한 대화를 다시 써서 라벨(effort)만 비교 (생성 비용 안 듦)
 - 결과: 대화마다 {id}.json (주문서, 대화, 형식 검사, 라벨), usage.jsonl, cost.md
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--effort", default=os.getenv("CLAUDE_EFFORT", "low"))
+    ap.add_argument("--effort", default=os.getenv("CLAUDE_EFFORT", "medium"))
     ap.add_argument("--claude-model", default=os.getenv("CLAUDE_MODEL", "claude-haiku-5-5"))
     ap.add_argument("--gemini-model", default=os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite"))
     ap.add_argument("--out", default="data/raw/test10")
