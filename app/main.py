@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     if not hasattr(app.state, "writer"):  # 테스트에서는 가짜 LLM을 미리 넣어둠
         s = Settings()
         primary, fallback = build_clients(s)
-        app.state.writer = Writer(primary, fallback, max_retries=s.max_retries)
+        app.state.writer = Writer(primary, fallback, max_retries=s.max_retries, verify_timeout=s.verify_timeout)
     yield
 
 
