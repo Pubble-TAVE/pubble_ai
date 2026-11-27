@@ -23,23 +23,32 @@ from pipeline.orders import make_orders
 
 
 async def one(order, out: Path, reuse: Path | None, gemini, claude, log: UsageLog, sem: asyncio.Semaphore):
+    try:
+        await _one(order, out, reuse, gemini, claude, log, sem)
+    except Exception as e:  # 대화 하나가 실패해도 나머지는 계속
+        print(f"{order['id']}: 실패 ({type(e).__name__}: {e})")
+
+
+async def _one(order, out: Path, reuse: Path | None, gemini, claude, log: UsageLog, sem: asyncio.Semaphore):
     async with sem:
         if reuse and (reuse / f"{order['id']}.json").exists():
-            saved = json.loads((reuse / f"{order['id']}.json").read_text())
+            saved = json.loads((reuse / f"{order['id']}.json").read_text(encoding="utf-8"))
             order, dialog = saved["order"], saved["dialog"]
         else:
             raw = await gemini.call("generate", generate.SYSTEM, generate.prompt(order), log)
             try:
                 dialog = generate.parse(raw)
             except json.JSONDecodeError:
-                (out / f"{order['id']}.json").write_text(json.dumps({"order": order, "raw": raw}, ensure_ascii=False))
+                (out / f"{order['id']}.json").write_text(json.dumps({"order": order, "raw": raw}, ensure_ascii=False),
+                                                         encoding="utf-8")
                 print(f"{order['id']}: 생성 JSON 깨짐")
                 return
         problems = generate.check(order, dialog)
         labels = await label_dialog(order, dialog, claude, log) if dialog.get("messages") else {}
         bad = sum(1 for e in labels.get("structure", {}).values() if e["problems"])
         (out / f"{order['id']}.json").write_text(json.dumps(
-            {"order": order, "dialog": dialog, "problems": problems, "labels": labels}, ensure_ascii=False, indent=1))
+            {"order": order, "dialog": dialog, "problems": problems, "labels": labels}, ensure_ascii=False, indent=1),
+            encoding="utf-8")
         print(f"{order['id']}: 메시지 {len(dialog.get('messages', []))}개, 생성 문제 {len(problems)}, 라벨 탈락 {bad}")
 
 
@@ -53,11 +62,11 @@ async def main(a):
     sem = asyncio.Semaphore(a.parallel)
     orders = make_orders(a.n, seed=a.seed)
     await asyncio.gather(*(one(o, out, Path(a.reuse) if a.reuse else None, gemini, claude, log, sem) for o in orders))
-    with (out / "usage.jsonl").open("w") as f:
+    with (out / "usage.jsonl").open("w", encoding="utf-8") as f:
         for u in log.rows:
             f.write(json.dumps(asdict(u), ensure_ascii=False) + "\n")
     text = f"effort: {a.effort}, 생성: {a.gemini_model}\n\n" + report(log.rows, a.n)
-    (out / "cost.md").write_text(text)
+    (out / "cost.md").write_text(text, encoding="utf-8")
     print("\n" + text)
 
 
