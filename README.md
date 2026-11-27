@@ -45,8 +45,10 @@ app/
   services/verifier.py       검증기 연결 지점: verify(task, 문장, 근거[ID, 이름, 내용]) → passed, score, reason (연 NLI로 교체)
   services/dates.py          상대 날짜 → 마감 ("담주까지" = 다음 주 일요일)
   services/board.py          현황판 5칸 계산 규칙 (연)
+pipeline/                    가상 대화 데이터: 주문서(orders) → Gemini 생성(generate) → Claude 라벨(label) → 비용(cost)
 tests/                       가짜 LLM 테스트
 scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (effort 비교)
+scripts/make_dialogs.py      대화 N개 생성 + 라벨 + 비용 계산
 ```
 
 ## 처리 흐름 (writer.py)
@@ -80,3 +82,18 @@ scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (eff
 - 학습 데이터 = (user 프롬프트 → 선생 답안). 기준과 예시는 학습 입력에 안 넣음 → 자체 모델이 짧은 프롬프트만으로 선생처럼 쓰게 증류
 - 구조화 모델 출력에는 `due_text`(마감 원문 표현)가 더 있음. 응답에서는 dates.py로 날짜로 바꾸고 빼냄
 - 실제 호출 확인: `python -m scripts.try_teacher` (CLAUDE_EFFORT를 low / medium으로 바꿔가며 비교)
+
+## 가상 대화 데이터 (pipeline/)
+
+```bash
+set -a; source .env; set +a                       # ANTHROPIC_API_KEY, GEMINI_API_KEY
+python -m scripts.make_dialogs --n 10 --effort low --out data/raw/test10_low
+python -m scripts.make_dialogs --n 10 --effort medium --out data/raw/test10_medium --reuse data/raw/test10_low
+```
+
+1. 주문서 (`orders.py`): v2 비율대로 안건 형태, 인원 4~8명, 메시지 50~100개, 넣을 상황 2~4개, 결말을 정함 (seed 고정)
+2. 생성 (`generate.py`, Gemini): 대화 + 반응 분류 라벨(reaction, reply_to, user_reply_to) + 의도한 포인트, 단계, outcome. 형식 검사
+3. 라벨 (`label.py`, Claude): 내용 있음 메시지마다 구조화 (서버와 같은 프롬프트, open_items는 앞 라벨로 계산) → 묶음 → 25/50/75/100% 시점 현황판(코드 계산)으로 상황 요약
+4. 비용 (`cost.py`): 단계별 토큰과 비용, 300개 예상 (일반 / Batch)
+- `--reuse`: 같은 대화로 라벨만 다시 (effort 비교할 때 생성 비용 안 듦)
+- 결과는 `data/raw/` (git에 안 올라감)
