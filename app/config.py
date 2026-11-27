@@ -1,7 +1,8 @@
 """환경 변수로 어떤 LLM을 쓸지 정한다.
 
-LLM_PRIMARY=openai  : 지금 (S4 1차 통합까지 선생 LLM API로)
-LLM_PRIMARY=local   : 자체 모델 (S8 이후), 실패하면 OpenAI로 대체
+LLM_PRIMARY=api    : 지금 (자체 모델 학습 전까지 Claude Haiku 5.5로)
+LLM_PRIMARY=local  : 자체 모델 (Qwen3-1.7B, llama-server), 실패하면 Claude로 대체
+결론은 항상 Claude (자체 모델로 바꾸지 않음).
 """
 import os
 from dataclasses import dataclass
@@ -11,10 +12,11 @@ from app.schemas.common import Source
 
 @dataclass
 class Settings:
-    llm_primary: str = os.getenv("LLM_PRIMARY", "openai")  # openai | local
-    llm_fallback: str = os.getenv("LLM_FALLBACK", "openai")  # openai | none
-    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
-    openai_model: str | None = os.getenv("OPENAI_MODEL")  # 정답 품질 테스트(S3) 후 결정
+    llm_primary: str = os.getenv("LLM_PRIMARY", "api")  # api | local
+    llm_fallback: str = os.getenv("LLM_FALLBACK", "api")  # api | none (local일 때 대체)
+    anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY")
+    claude_model: str = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5")
+    claude_effort: str = os.getenv("CLAUDE_EFFORT", "low")  # low | medium (대화 10개 테스트로 결정)
     local_base_url: str = os.getenv("LOCAL_BASE_URL", "http://localhost:8080/v1")
     local_model: str = os.getenv("LOCAL_MODEL", "qwen3-1.7b-pubble")
     max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "1"))  # 같은 모델로 다시 쓰는 횟수
@@ -22,24 +24,21 @@ class Settings:
 
 
 def build_clients(s: Settings):
-    """(primary, fallback) 클라이언트를 만든다. fallback은 없을 수 있다."""
+    """(primary, fallback, conclusion) 클라이언트. fallback은 없을 수 있다."""
+    from app.llm.anthropic_client import AnthropicClient
     from app.llm.openai_compat import OpenAICompatClient
 
-    def openai_client():
-        if not s.openai_model:
-            raise RuntimeError("OPENAI_MODEL 환경 변수를 정해주세요")
-        return OpenAICompatClient(model=s.openai_model, source=Source.api, api_key=s.openai_api_key)
+    def claude():
+        return AnthropicClient(model=s.claude_model, effort=s.claude_effort, api_key=s.anthropic_api_key)
 
-    def local_client():
+    def local():
         return OpenAICompatClient(
             model=s.local_model, source=Source.local, base_url=s.local_base_url, disable_thinking=True
         )
 
-    primary = local_client() if s.llm_primary == "local" else openai_client()
-    fallback = None
-    if s.llm_primary == "local" and s.llm_fallback == "openai":
-        fallback = openai_client()
-    return primary, fallback
+    primary = local() if s.llm_primary == "local" else claude()
+    fallback = claude() if s.llm_primary == "local" and s.llm_fallback == "api" else None
+    return primary, fallback, claude()
 
 
 @dataclass(frozen=True)

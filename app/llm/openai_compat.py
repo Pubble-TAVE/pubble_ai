@@ -1,8 +1,8 @@
-"""OpenAI API와 llama.cpp 서버(llama-server)를 같은 코드로 부른다.
+"""OpenAI 호환 API를 쓰는 모델을 같은 코드로 부른다.
 
-llama-server는 OpenAI 호환 API를 열어주므로 base_url만 바꾸면 된다.
-- 선생 / 대체: OpenAI (OPENAI_API_KEY, OPENAI_MODEL)
 - 자체 모델: Qwen3-1.7B GGUF를 llama-server로 띄우고 LOCAL_BASE_URL로 연결
+- 대화 생성(Gemini Flash-Lite)도 OpenAI 호환 base_url로 부를 수 있다 (데이터 파이프라인)
+선생 LLM과 결론은 Claude라서 anthropic_client.py를 쓴다.
 """
 import re
 

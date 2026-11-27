@@ -2,6 +2,7 @@ fastapi>=0.115
 pydantic>=2.7
 uvicorn>=0.30
 openai>=1.40
+anthropic>=0.70
 # 테스트
 httpx
 pytest
