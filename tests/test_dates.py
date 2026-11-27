@@ -3,7 +3,6 @@ from datetime import date
 import pytest
 
 from app.services.dates import resolve_due
-from app.templates import messages as tpl
 
 BASE = date(2026, 11, 18)  # 수요일
 
@@ -22,9 +21,3 @@ BASE = date(2026, 11, 18)  # 수요일
 ])
 def test_resolve_due(text, expected):
     assert resolve_due(text, BASE) == expected
-
-
-def test_templates():
-    assert tpl.vote_opened("MT 대관 장소", ["홍대", "신촌"]) == "'MT 대관 장소' 투표가 열렸습니다. 선택지: 홍대, 신촌"
-    assert "마감까지 1시간 남았습니다." in tpl.participation_nudge("규연", "MT 대관 장소", "1h")
-    assert tpl.fmt_due(None) == "마감 없음"

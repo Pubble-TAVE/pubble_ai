@@ -43,10 +43,24 @@ def client(llm):
     del app.state.writer
 
 
-MEMBERS = [{"id": "u1", "name": "해원"}, {"id": "u2", "name": "정은"}, {"id": "u3", "name": "지현"}]
-OPTIONS = [{"id": "o1", "name": "홍대"}, {"id": "o2", "name": "신촌"}]
+MEMBERS = [{"id": "u1", "name": "지민"}, {"id": "u2", "name": "서연"}, {"id": "u3", "name": "하준"}]
 SCOPE = {"project_id": "p1", "chat_room_id": "c1", "agenda_id": "a1"}
 
 
-def msg(i, member, text, anonymous=False, at="2026-11-18T21:10:00+09:00"):
-    return {"id": i, "member_id": member, "sent_at": at, "text": text, "anonymous": anonymous}
+def msg(i, member, text, anonymous=False, reply=None, at="2026-11-24T21:10:00+09:00"):
+    return {"id": i, "member_id": member, "sent_at": at, "text": text, "anonymous": anonymous, "user_reply_to": reply}
+
+
+def item(i, text, people, opponents=(), owner=None, due=None, evidence=()):
+    p = lambda n: {"name": n, "reason": None, "evidence": list(evidence)}  # noqa: E731
+    return {"id": i, "text": text, "people": [p(n) for n in people], "opponents": [p(n) for n in opponents],
+            "owner": owner, "due": due, "evidence": list(evidence)}
+
+
+BOARD = {
+    "common": [item("c1", "MVP 범위 줄이기", ["지민", "하준"], evidence=["msg_3", "msg_8"])],
+    "split": [item("c3", "놓친 내용 요약 빼기", ["지민"], ["서연"], evidence=["msg_3", "msg_4"])],
+    "new": [],
+    "need_check": [],
+    "todos": [item("msg_4-4", "디자인 시안 1차", ["서연"], owner="서연", due="2026-11-27", evidence=["msg_4"])],
+}
