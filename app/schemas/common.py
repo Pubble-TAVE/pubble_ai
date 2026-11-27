@@ -1,6 +1,6 @@
 """여러 task가 같이 쓰는 형식.
 
-필드 이름은 임시. 백엔드가 정하면 여기만 바꾸면 된다.
+필드 이름은 백엔드와 맞추면 여기만 바꾸면 된다 (키 이름은 snake_case).
 """
 from datetime import date, datetime
 from enum import Enum
@@ -13,22 +13,13 @@ class Member(BaseModel):
     name: str
 
 
-class Option(BaseModel):
-    id: str
-    name: str
-
-
 class Message(BaseModel):
-    id: str
+    id: str  # msg_N
     member_id: str
     sent_at: datetime
     text: str
-    anonymous: bool = Field(False, description="익명 체크 메시지 (채팅에는 안 보이고 현황판, AI 모델에만 들어감)")
-
-
-class OptionCount(BaseModel):
-    option_id: str
-    count: int
+    anonymous: bool = Field(False, description="Pubble에게만 말하기 (채팅에는 안 보이고 현황판, AI에만 들어감)")
+    user_reply_to: str | None = Field(None, description="답장 기능으로 지정한 대상 메시지 ID (답장이 아니면 null)")
 
 
 class Scope(BaseModel):
@@ -38,11 +29,12 @@ class Scope(BaseModel):
 
 
 class Evidenced(BaseModel):
-    """화면에 보일 문장 하나 + 근거 메시지 ID."""
+    """화면에 보일 문장 하나 + 근거 ID."""
 
     text: str
     evidence: list[str]
-    verified: bool | None = Field(None, description="검증기 결과. 응답에는 통과한 문장만 담김")
+    verified: bool | None = Field(None, description="검증 결과. 응답에는 통과한 문장만 담김")
+    verify_score: float | None = Field(None, description="검증 점수 (0~1). 통과 기준 조정용")
 
 
 class TodoItem(BaseModel):
@@ -54,6 +46,7 @@ class TodoItem(BaseModel):
         None, description="이미 할당된 할 일이면 그 ID (결론에 보이기만 하고 새로 등록하지 않음)"
     )
     verified: bool | None = None
+    verify_score: float | None = None
 
 
 class AssignedTodo(BaseModel):
@@ -68,13 +61,13 @@ class AssignedTodo(BaseModel):
 class WriteStatus(str, Enum):
     ok = "ok"
     no_conclusion = "no_conclusion"  # 결론 없음 (합의가 없음)
-    skipped = "skipped"  # 할 일 캐치에서 담당자가 없어 할 일로 안 잡음
+    skipped = "skipped"  # 쓴 결과가 검증에서 전부 걸러짐
     failed = "failed"  # 재시도, 대체까지 실패 → 백엔드는 화면 유지 / '생성 실패'
 
 
 class Source(str, Enum):
     local = "local"  # 자체 모델 (Qwen3-1.7B)
-    api = "api"  # 큰 LLM API (OpenAI)
+    api = "api"  # Claude Haiku 5.5
     none = "none"
 
 

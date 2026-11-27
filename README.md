@@ -1,66 +1,82 @@
-# Pubble AI 서버 (뼈대)
+# Pubble AI 서버
 
 FastAPI 서버 하나. 아무것도 저장하지 않고, 백엔드가 데이터를 담아 부르면 결과만 돌려줌.
 
-- `/write/*`: 글 쓰기 5개 (가은)
-- 분석기, 선택기: 연이 `app/routers/`에 추가하고 `app/main.py`에서 include
-- 엔드포인트 경로와 필드 이름은 임시. 백엔드가 정하면 `app/schemas/`만 바꾸면 됨
+- `/write/structure`, `/write/summary`, `/write/conclusion`: 구조화, 상황 요약, 결론 (가은)
+- 반응 분류, 관계 판단, 현황판(`/board`), 진행 규칙: 연이 `app/routers/`에 추가하고 `app/main.py`에서 include
+- 검증은 `/write/*` 안에서 내부 호출 (엔드포인트 없음)
+- 기준 문서: 노션 '구조화 출력 JSON 스키마 확정' 카드, '합성 대화 데이터 생성 기준 (v2)', '[백엔드 전달] 바뀐 기능 + AI 서버 API 초안'
 
 ## 실행
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env           # OPENAI_API_KEY, OPENAI_MODEL 채우기 (.env는 git에 안 올라감)
+cp .env.example .env           # ANTHROPIC_API_KEY 채우기 (.env는 git에 안 올라감)
 set -a; source .env; set +a
 uvicorn app.main:app --reload
 # http://localhost:8000/docs 에서 요청/응답 형식 확인
 pytest -q                      # 가짜 LLM으로 테스트 (API 키 필요 없음)
 ```
 
-자체 모델로 바꿀 때 (S8 이후):
+자체 모델로 바꿀 때 (학습 뒤):
 
 ```bash
 llama-server -m qwen3-1.7b-pubble-q4.gguf --port 8080   # 4bit GGUF, CPU
-export LLM_PRIMARY=local LLM_FALLBACK=openai
+export LLM_PRIMARY=local LLM_FALLBACK=api               # 실패하면 Claude로 대체
 ```
+
+결론은 항상 Claude Haiku 5.5 (자체 모델로 바꾸지 않음).
 
 ## 구조
 
 ```
 app/
-  main.py                 서버, 라우터 연결
-  config.py               LLM 고르기 (openai / local + 대체)
-  schemas/common.py       공통 형식 (팀원, 선택지, 메시지, 근거 문장, 할 일, 상태)
-  schemas/write.py        task 5개 요청/응답
-  routers/write.py        POST /write/{board-summary, conclusion, option-normalize, todo-catch, next-agenda}
-  llm/openai_compat.py    OpenAI와 llama-server를 같은 코드로 (Qwen3 non-thinking)
-  services/prompts.py     task별 프롬프트 (선생 LLM, 자체 모델, 학습 데이터가 같은 형식)
-  services/writer.py      LLM → JSON → 근거 ID 확인 → 검증 → 재시도 → 대체
-  services/verifier.py    검증기 연결 지점 (지금은 통과만, 연의 NLI로 교체)
-  services/dates.py       상대 날짜 → 마감 ("담주까지" = 다음 주 일요일)
-  templates/messages.py   템플릿 문구 (투표 열기, 참여 알림, 안내 문구 등)
-tests/                    가짜 LLM 테스트
+  main.py                    서버, 라우터 연결
+  config.py                  LLM 고르기 (api = Claude / local = Qwen3 + Claude 대체), 현황판 설정
+  schemas/common.py          공통 형식 (팀원, 메시지 + user_reply_to, 근거 문장, 할 일, 상태)
+  schemas/write.py           구조화, 상황 요약, 결론 요청/응답
+  schemas/board.py           현황판 요청/응답 (연)
+  routers/write.py           POST /write/{structure, summary, conclusion}
+  llm/anthropic_client.py    Claude Haiku 5.5 (effort, system 프롬프트 캐싱)
+  llm/openai_compat.py       llama-server(Qwen3, non-thinking), OpenAI 호환 모델
+  services/prompts.py        task별 user 프롬프트 (선생 LLM, 자체 모델, 학습 데이터가 같은 형식)
+  services/teacher_guides.py 선생 LLM에만 붙이는 작성 기준 + 예시 (v2 기준)
+  services/writer.py         LLM → JSON → 형식 확인 → 검증 → 재시도 → 대체
+  services/verifier.py       검증기 연결 지점: verify(task, 문장, 근거[ID, 이름, 내용]) → passed, score, reason (연 NLI로 교체)
+  services/dates.py          상대 날짜 → 마감 ("담주까지" = 다음 주 일요일)
+  services/board.py          현황판 5칸 계산 규칙 (연)
+tests/                       가짜 LLM 테스트
+scripts/try_teacher.py       예시 대화로 Claude 3개 task 돌려보기 (effort 비교)
 ```
 
 ## 처리 흐름 (writer.py)
 
 1. task별 프롬프트로 LLM 호출 (JSON만 출력)
-2. 근거 ID 확인: 입력에 없는 메시지 ID는 버림, 근거가 없는 문장은 버림
-3. 검증기: board_summary, conclusion, todo_catch 문장만 (통과한 문장만 응답에)
-4. 쓸 수 없으면 같은 모델로 한 번 더 → 대체 모델(OpenAI) 한 번 → 그래도 안 되면 `status: failed`
+2. 형식 확인: 정해진 값(type, stance) 밖이면 다시 쓰기, 입력에 없는 ID는 버림, 근거가 없는 포인트나 문장은 버림
+3. 검증: 남은 포인트, 문장마다 검증기 호출. 근거 없음, 검증기 오류, 시간 초과(VERIFY_TIMEOUT)는 탈락
+4. 쓸 수 없으면 같은 모델로 한 번 더 → 대체 모델(Claude) 한 번 → 그래도 안 되면 `status: failed`
+5. 쓴 결과가 검증에서 전부 탈락하면 `status: skipped`
 
 ## task별 규칙
 
 | task | 코드에서 하는 것 | status |
 | --- | --- | --- |
-| board_summary | 익명 메시지는 프롬프트, 근거에서 뺌 (넣을지 확인 필요) | ok / failed (백엔드는 이전 문장 유지) |
-| conclusion | 익명 메시지는 '익명'으로 넣음 (이름 추측 금지). 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선 | ok / no_conclusion (결론 없음) / failed (생성 실패) |
-| option_normalize | 이름이 기존 선택지와 똑같으면 그 ID로 | ok / failed |
-| todo_catch | 담당자 없으면 할 일로 안 잡음. 요청 문구는 템플릿 | ok / skipped / failed |
-| next_agenda | 기존 후보, 기존 안건과 겹치면 뺌. 후보마다 채팅방 ID | ok / failed |
+| structure | 포인트 ID는 코드가 붙임(`msg_N-순번`). `answer_to`는 `open_items`에 있는 ID만. 맡은 사람이 없는 할 일 → 요청. 마감은 dates.py 규칙 우선. 할 일이 아니면 owner, due 비움 | ok (포인트 없음 포함) / skipped / failed |
+| summary | 근거는 현황판 항목 ID. 검증은 항목 내용(문장, 사람, 반대편, 담당)으로 | ok / skipped / failed (백엔드는 이전 요약 유지) |
+| conclusion | 담당자 없는 할 일 → 미결 사항. 이미 할당된 할 일은 `existing_todo_id`. 마감은 dates.py 규칙 우선. 익명은 '익명'으로 (이름 추측 금지) | ok / no_conclusion (결론 없음) / failed (생성 실패) |
 
 ## 응답 공통 필드
 
 - `status`: ok / no_conclusion / skipped / failed
-- `source`: local (자체 모델) / api (OpenAI) / none
+- `source`: local (자체 모델) / api (Claude) / none
 - `attempts`: LLM 호출 횟수 (Langfuse 붙이기 전 임시 기록용)
+
+## 선생 LLM 프롬프트
+
+- user 프롬프트(`prompts.py`)는 선생, 자체 모델이 똑같다 = 학습 데이터의 입력 형식
+- 선생(Claude)에게만 system에 작성 기준과 예시(`teacher_guides.py`)를 더 붙인다 (캐싱)
+  - 공통: 직접 나온 근거만 / 익명 작성자 짐작 금지 / 남의 의견 정리는 포인트로 안 만듦
+  - task별: v2 '정답 붙이는 규칙', '헷갈릴 때 기준' + 예시 (MVP 범위 대화)
+- 학습 데이터 = (user 프롬프트 → 선생 답안). 기준과 예시는 학습 입력에 안 넣음 → 자체 모델이 짧은 프롬프트만으로 선생처럼 쓰게 증류
+- 구조화 모델 출력에는 `due_text`(마감 원문 표현)가 더 있음. 응답에서는 dates.py로 날짜로 바꾸고 빼냄
+- 실제 호출 확인: `python -m scripts.try_teacher` (CLAUDE_EFFORT를 low / medium으로 바꿔가며 비교)

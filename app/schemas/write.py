@@ -1,36 +1,73 @@
-"""글 쓰기 5개 task의 요청/응답."""
+"""글 쓰기 3개 task(구조화, 상황 요약, 결론)의 요청/응답.
+
+기준 문서: 노션 '구조화 출력 JSON 스키마 확정' 카드, '합성 대화 데이터 생성 기준 (v2)',
+'[백엔드 전달] 바뀐 기능 + AI 서버 API 초안'
+"""
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import (
-    AssignedTodo,
-    Evidenced,
-    Member,
-    Message,
-    Option,
-    OptionCount,
-    Scope,
-    TodoItem,
-    WriteMeta,
-)
+from app.schemas.board import BoardResponse
+from app.schemas.common import AssignedTodo, Evidenced, Member, Message, Scope, TodoItem, WriteMeta
+
+PointType = Literal["제안", "의견", "질문", "요청", "정보", "할 일"]
+Stance = Literal["찬성", "반대", "조건부", "없음"]
+AgendaForm = Literal["아이디어 모으기", "선택", "진행 공유", "문제 해결"]
 
 
-# ---------- board_summary: 현황판 쟁점, 합의 ----------
-class BoardSummaryRequest(Scope):
+# ---------- 구조화: 메시지 → 포인트 ----------
+class OpenItem(BaseModel):
+    """지금 현황판 확인 필요 칸에 있는 질문·요청."""
+
+    id: str  # 포인트 ID (msg_N-순번)
+    text: str
+    speaker: str
+
+
+class StructureRequest(Scope):
     agenda_title: str
-    options: list[Option]
+    agenda_form: AgendaForm | None = None
     members: list[Member]
-    counts: list[OptionCount]
-    messages: list[Message] = Field(description="그 안건의 최근 메시지. 익명 메시지는 서버에서 뺌")
+    message: Message = Field(description="반응 분류가 '내용 있음'으로 본 메시지")
+    recent_messages: list[Message] = Field(
+        default_factory=list, description="같은 안건의 앞 메시지 3~5개. 답장 대상 메시지가 없으면 추가해서 보냄"
+    )
+    open_items: list[OpenItem] = Field(default_factory=list)
+    now: date = Field(description="기준 날짜 ('담주까지' 같은 상대 날짜 계산용)")
 
 
-class BoardSummaryResponse(WriteMeta):
-    issues: list[Evidenced] = []
-    agreements: list[Evidenced] = []
+class Point(BaseModel):
+    """필드 순서 고정 (학습 데이터 형식과 같음)."""
+
+    id: str = Field(description="코드가 붙임: 메시지 ID + 순번 (msg_4-1)")
+    text: str
+    type: PointType
+    stance: Stance
+    reason: str | None = None
+    target: str | None = Field(None, description="무엇에 대한 말인지 주제 텍스트. 질문·요청은 받는 사람 또는 '전원'")
+    owner: str | None = Field(None, description="할 일의 담당자 팀원 ID")
+    due: date | None = None
+    answer_to: str | None = Field(None, description="이 포인트가 답한 질문·요청의 포인트 ID (open_items 중)")
+    evidence: list[str]
+    verify_score: float | None = None
 
 
-# ---------- conclusion: 결론 초안 + 할 일 + 미결 사항 + 논의 흐름 ----------
+class StructureResponse(WriteMeta):
+    points: list[Point] = []
+
+
+# ---------- 상황 요약: 현황판 → 2~3문장 ----------
+class SummaryRequest(Scope):
+    agenda_title: str
+    board: BoardResponse = Field(description="/board 응답 그대로")
+
+
+class SummaryResponse(WriteMeta):
+    sentences: list[Evidenced] = Field([], description="2~3문장. evidence는 현황판 항목 ID")
+
+
+# ---------- 결론: [종료] 뒤 결론 초안 ----------
 class ConclusionDraft(BaseModel):
     decision: Evidenced | None = Field(None, description="합의가 없으면 null (결론 없음)")
     todos: list[TodoItem] = []
@@ -40,60 +77,12 @@ class ConclusionDraft(BaseModel):
 
 class ConclusionRequest(Scope):
     agenda_title: str
-    options: list[Option]
     members: list[Member]
-    counts: list[OptionCount]
-    vote_result: list[OptionCount] | None = None
-    messages: list[Message] = Field(description="그 안건의 전체 메시지 (익명 메시지 포함)")
+    board: BoardResponse
+    evidence_messages: list[Message] = Field(description="현황판 항목의 근거 메시지 (익명 포함)")
     base_date: date
-    assigned_todos: list[AssignedTodo] = []
-    previous_draft: ConclusionDraft | None = Field(None, description="[수정 요청]으로 다시 쓸 때만")
-    revision_request: str | None = Field(None, description="[수정 요청] 한 줄")
+    existing_todos: list[AssignedTodo] = []
 
 
 class ConclusionResponse(WriteMeta):
     draft: ConclusionDraft | None = None
-
-
-# ---------- option_normalize: 선택지 정리 ----------
-class OptionNormalizeRequest(Scope):
-    agenda_title: str
-    message: Message
-    options: list[Option]
-
-
-class OptionNormalizeResponse(WriteMeta):
-    name: str | None = None
-    matched_option_id: str | None = Field(None, description="기존 선택지와 같으면 그 ID, 새 선택지면 null")
-    evidence: list[str] = []
-
-
-# ---------- todo_catch: 할 일 캐치 ----------
-class TodoCatchRequest(Scope):
-    message: Message
-    previous_message: Message | None = None
-    members: list[Member]
-
-
-class TodoCatchResponse(WriteMeta):
-    todo: TodoItem | None = None
-    display_text: str | None = Field(None, description="담당자에게 보낼 요청 문구 (템플릿)")
-
-
-# ---------- next_agenda: 추천 다음 안건 ----------
-class AgendaCandidate(BaseModel):
-    title: str
-    reason: str
-    evidence: list[str]
-    chat_room_id: str
-
-
-class NextAgendaRequest(Scope):
-    open_issues: list[Evidenced] = Field([], description="끝난 안건의 미결 사항 (근거 포함)")
-    other_agenda_messages: list[Message] = Field([], description="'다른 안건'으로 분류된 메시지")
-    existing_candidates: list[str] = []
-    existing_agendas: list[str] = Field([], description="같은 프로젝트의 기존 안건 제목")
-
-
-class NextAgendaResponse(WriteMeta):
-    candidates: list[AgendaCandidate] = []
